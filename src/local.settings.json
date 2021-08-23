@@ -1,7 +1,8 @@
 {
     "IsEncrypted": false,
     "Values": {
-        "AzureWebJobsStorage": "UseDevelopmentStorage=true",
-        "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated"
+      "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+      "SqlConnectionString": "Server=(localdb)\\mssqllocaldb;Database=TodoContext-13D62DBB-69B7-4734-B4B2-90796EF06F3A;Trusted_Connection=True;MultipleActiveResultSets=true",
+      "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated"
     }
 }

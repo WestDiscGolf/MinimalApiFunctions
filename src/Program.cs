@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Azure.Functions.Worker;
@@ -8,14 +9,13 @@ using Microsoft.EntityFrameworkCore;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
 
-string connectionString = "Server=(localdb)\\mssqllocaldb;Database=TodoContext-13D62DBB-69B7-4734-B4B2-90796EF06F3A;Trusted_Connection=True;MultipleActiveResultSets=true";
+var connectionString = Environment.GetEnvironmentVariable("SqlConnectionString");
 
 var host = new HostBuilder()
     .ConfigureFunctionsWorkerDefaults()
     .ConfigureServices(services =>
     {
         services.AddDbContext<TodoDb>(options =>
-            //options.UseSqlServer(Configuration.GetConnectionString("SpotterContext")));
             options.UseSqlServer(connectionString)
         );
     })
