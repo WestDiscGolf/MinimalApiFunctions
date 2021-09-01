@@ -1,13 +1,12 @@
 using System;
-using System.Threading.Tasks;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Azure.Functions.Worker;
-using Microsoft.Azure.Functions.Worker.Http;
-using System.Net;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.EntityFrameworkCore;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.Functions.Worker.Http;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 var connectionString = Environment.GetEnvironmentVariable("SqlConnectionString");
 
@@ -32,11 +31,149 @@ async Task CreateDbIfNotExists()
     // todo: migrations
 }
 
+public class Functions
+{
+    private readonly TodoDb _db;
+
+    public Functions(TodoDb db)
+    {
+        _db = db;
+    }
+
+    [Function("hello-text")]
+    public async Task<HttpResponseData> Root([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "text")] HttpRequestData req)
+    {
+        return await req.OkResponse("Hello World!");
+    }
+
+    [Function("hello-json")]
+    public async Task<HttpResponseData> HelloJson([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "hello")] HttpRequestData req)
+    {
+        return await req.OkObjectResponse(new { Hello = "World" });
+    }
+
+    [Function("todo-list")]
+    public async Task<HttpResponseData> Todos([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "todos")] HttpRequestData req, FunctionContext executionContext)
+    {
+        return await req.OkObjectResponse(await _db.Todos.ToListAsync());
+    }
+
+    [Function("todo-find")]
+    public async Task<HttpResponseData> TodosFindById([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "todos/{id:int}")] HttpRequestData req, int id, FunctionContext executionContext)
+    {
+        if (await _db.Todos.FindAsync(id) is Todo todo)
+        {
+            return await req.OkObjectResponse(todo);
+        }
+        return req.NotFoundResponse();
+    }
+
+    [Function("todo-list-complete")]
+    public async Task<HttpResponseData> TodosComplete([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "todos/complete")] HttpRequestData req, FunctionContext executionContext)
+    {
+        return await req.OkObjectResponse(await _db.Todos.Where(x => x.IsComplete).ToListAsync());
+    }
+
+    [Function("todo-list-incomplete")]
+    public async Task<HttpResponseData> TodosInComplete([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "todos/incomplete")] HttpRequestData req, FunctionContext executionContext)
+    {
+        return await req.OkObjectResponse(await _db.Todos.Where(x => !x.IsComplete).ToListAsync());
+    }
+
+    [Function("todo-post")]
+    public async Task<HttpResponseData> TodosPost([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "todos")] HttpRequestData req, FunctionContext executionContext)
+    {
+        var todo = await req.ReadFromJsonAsync<Todo>();
+
+        if (!MinimalValidation.TryValidate(todo, out var errors))
+        {
+            return await req.ValidationResponse(errors);
+        }
+
+        _db.Todos.Add(todo);
+        await _db.SaveChangesAsync();
+        
+        return await req.CreatedAtResponse(nameof(TodosFindById), new { id = todo.Id }, todo);
+    }
+
+    [Function("todo-put")]
+    public async Task<HttpResponseData> TodosPut([HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "todos/{id:int}")] HttpRequestData req, int id, FunctionContext executionContext)
+    {
+        var inputTodo = await req.ReadFromJsonAsync<Todo>();
+
+        if (!MinimalValidation.TryValidate(inputTodo, out var errors))
+        {
+            return await req.ValidationResponse(errors);
+        }
+
+        var todo = await _db.Todos.FindAsync(id);
+        if (todo == null)
+        {
+            return req.NotFoundResponse();
+        }
+
+        todo.Title = inputTodo.Title;
+        todo.IsComplete = inputTodo.IsComplete;
+
+        await _db.SaveChangesAsync();
+
+        return req.NoContentResponse();
+    }
+
+    [Function("todo-mark-complete")]
+    public async Task<HttpResponseData> TodosMarkComplete([HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "todos/{id:int}/mark-complete")] HttpRequestData req, int id, FunctionContext executionContext)
+    {
+        if (await _db.Todos.FindAsync(id) is Todo todo)
+        {
+            todo.IsComplete = true;
+            await _db.SaveChangesAsync();
+            return req.NoContentResponse();
+        }
+
+        return req.NotFoundResponse();
+    }
+
+    [Function("todo-mark-incomplete")]
+    public async Task<HttpResponseData> TodosMarkIncomplete([HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "todos/{id:int}/mark-incomplete")] HttpRequestData req, int id, FunctionContext executionContext)
+    {
+        if (await _db.Todos.FindAsync(id) is Todo todo)
+        {
+            todo.IsComplete = false;
+            await _db.SaveChangesAsync();
+            return req.NoContentResponse();
+        }
+
+        return req.NotFoundResponse();
+    }
+
+    [Function("todo-delete")]
+    public async Task<HttpResponseData> TodosDelete([HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "todos/{id:int}")] HttpRequestData req, int id, FunctionContext executionContext)
+    {
+        if (await _db.Todos.FindAsync(id) is Todo todo)
+        {
+            _db.Todos.Remove(todo);
+            await _db.SaveChangesAsync();
+            return req.NoContentResponse();
+        }
+
+        return req.NotFoundResponse();
+    }
+
+    [Function("todo-delete-all")]
+    public async Task<HttpResponseData> TodosDeleteAll([HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "todos/delete-all")] HttpRequestData req, FunctionContext executionContext)
+    {
+        await _db.Database.ExecuteSqlRawAsync("DELETE FROM Todos");
+        return req.NoContentResponse();
+    }
+}
+
 public class Todo
 {
     public int Id { get; set; }
+
     [Required]
-    public string? Title { get; set; }
+    public string Title { get; set; }
+
     public bool IsComplete { get; set; }
 }
 
@@ -46,182 +183,4 @@ public class TodoDb : DbContext
         : base(options) { }
 
     public DbSet<Todo> Todos => Set<Todo>();
-}
-
-public static class Functions
-{
-    [Function("hello-text")]
-    public static async Task<HttpResponseData> Root([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "text")] HttpRequestData req)
-    {
-        var response = req.CreateResponse(HttpStatusCode.OK);
-        await response.WriteStringAsync("Hello World!");
-        return response;
-    }
-
-    [Function("hello-json")]
-    public static async Task<HttpResponseData> HelloJson([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "hello")] HttpRequestData req)
-    {
-        var response = req.CreateResponse(HttpStatusCode.OK);
-        await response.WriteAsJsonAsync(new { Hello = "World" });
-        return response;
-    }
-
-    [Function("todo-list")]
-    public static async Task<HttpResponseData> Todos([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "todos")] HttpRequestData req, FunctionContext executionContext)
-    {
-        var db = executionContext.InstanceServices.GetRequiredService<TodoDb>();
-        var response = req.CreateResponse(HttpStatusCode.OK);
-        await response.WriteAsJsonAsync(await db.Todos.ToListAsync());
-        return response;
-    }
-
-    [Function("todo-find")]
-    public static async Task<HttpResponseData> TodosFindById([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "todos/{id:int}")] HttpRequestData req, int id, FunctionContext executionContext)
-    {
-        var db = executionContext.InstanceServices.GetRequiredService<TodoDb>();
-        if (await db.Todos.FindAsync(id) is Todo todo)
-        {
-            var response = req.CreateResponse(HttpStatusCode.OK);
-            await response.WriteAsJsonAsync(todo);
-            return response;
-        }
-        else
-        {
-            var response = req.CreateResponse(HttpStatusCode.NotFound);
-            return response;
-        }
-    }
-
-    [Function("todo-list-complete")]
-    public static async Task<HttpResponseData> TodosComplete([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "todos/complete")] HttpRequestData req, FunctionContext executionContext)
-    {
-        var db = executionContext.InstanceServices.GetRequiredService<TodoDb>();
-        var response = req.CreateResponse(HttpStatusCode.OK);
-        await response.WriteAsJsonAsync(await db.Todos.Where(x => x.IsComplete).ToListAsync());
-        return response;
-    }
-
-    [Function("todo-list-incomplete")]
-    public static async Task<HttpResponseData> TodosInComplete([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "todos/incomplete")] HttpRequestData req, FunctionContext executionContext)
-    {
-        var db = executionContext.InstanceServices.GetRequiredService<TodoDb>();
-        var response = req.CreateResponse(HttpStatusCode.OK);
-        await response.WriteAsJsonAsync(await db.Todos.Where(x => !x.IsComplete).ToListAsync());
-        return response;
-    }
-
-    [Function("todo-post")]
-    public static async Task<HttpResponseData> TodosPost([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "todos")] HttpRequestData req, FunctionContext executionContext)
-    {
-        // todo: validation?
-
-        var db = executionContext.InstanceServices.GetRequiredService<TodoDb>();
-
-        var todo = await req.ReadFromJsonAsync<Todo>();
-        db.Todos.Add(todo);
-        await db.SaveChangesAsync();
-
-        var response = req.CreateResponse(HttpStatusCode.Created);
-        await response.WriteAsJsonAsync(todo);
-
-        // todo: created(route/{id}, todo);
-
-        return response;
-    }
-
-    [Function("todo-put")]
-    public static async Task<HttpResponseData> TodosPut([HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "todos/{id:int}")] HttpRequestData req, int id, FunctionContext executionContext)
-    {
-        // todo: validation?
-        // is the id in route the same as the body?
-
-        var db = executionContext.InstanceServices.GetRequiredService<TodoDb>();
-
-        var todo = await db.Todos.FindAsync(id);
-        if (todo == null) { return req.CreateResponse(HttpStatusCode.NotFound); }
-
-        var inputTodo = await req.ReadFromJsonAsync<Todo>();
-
-        todo.Title = inputTodo.Title;
-        todo.IsComplete = inputTodo.IsComplete;
-
-        await db.SaveChangesAsync();
-
-        var response = req.CreateResponse(HttpStatusCode.NoContent);
-        await response.WriteAsJsonAsync(todo);
-
-        // todo: created(route/{id}, todo);
-
-        return response;
-    }
-
-    [Function("todo-mark-complete")]
-    public static async Task<HttpResponseData> TodosMarkComplete([HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "todos/{id:int}/mark-complete")] HttpRequestData req, int id, FunctionContext executionContext)
-    {
-        // todo: validation?
-        // is the id in route the same as the body?
-
-        var db = executionContext.InstanceServices.GetRequiredService<TodoDb>();
-
-        var todo = await db.Todos.FindAsync(id);
-        if (todo == null) { return req.CreateResponse(HttpStatusCode.NotFound); }
-
-        todo.IsComplete = true;
-
-        await db.SaveChangesAsync();
-
-        var response = req.CreateResponse(HttpStatusCode.NoContent);
-
-        // todo: created(route/{id}, todo);
-
-        return response;
-    }
-
-    [Function("todo-mark-incomplete")]
-    public static async Task<HttpResponseData> TodosMarkIncomplete([HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "todos/{id:int}/mark-incomplete")] HttpRequestData req, int id, FunctionContext executionContext)
-    {
-        // todo: validation?
-        // is the id in route the same as the body?
-
-        var db = executionContext.InstanceServices.GetRequiredService<TodoDb>();
-
-        var todo = await db.Todos.FindAsync(id);
-        if (todo == null) { return req.CreateResponse(HttpStatusCode.NotFound); }
-
-        todo.IsComplete = false;
-
-        await db.SaveChangesAsync();
-
-        var response = req.CreateResponse(HttpStatusCode.NoContent);
-
-        // todo: created(route/{id}, todo);
-
-        return response;
-    }
-
-    [Function("todo-delete")]
-    public static async Task<HttpResponseData> TodosDelete([HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "todos/{id:int}")] HttpRequestData req, int id, FunctionContext executionContext)
-    {
-        // todo: validation?
-        // is the id in route the same as the body?
-
-        var db = executionContext.InstanceServices.GetRequiredService<TodoDb>();
-
-        if (await db.Todos.FindAsync(id) is Todo todo)
-        {
-            db.Todos.Remove(todo);
-            await db.SaveChangesAsync();
-            return req.CreateResponse(HttpStatusCode.OK);
-        }
-
-        return req.CreateResponse(HttpStatusCode.NotFound);
-    }
-
-    [Function("todo-delete-all")]
-    public static async Task<HttpResponseData> TodosDeleteAll([HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "todos/delete-all")] HttpRequestData req, FunctionContext executionContext)
-    {
-        var db = executionContext.InstanceServices.GetRequiredService<TodoDb>();
-        await db.Database.ExecuteSqlRawAsync("DELETE FROM Todos");
-        return req.CreateResponse(HttpStatusCode.OK);
-    }
 }
