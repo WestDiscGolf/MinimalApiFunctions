@@ -1,13 +1,8 @@
-using System.Collections.Generic;
-using System.Linq;
-using System.Net;
-using System.Reflection;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Routing.Template;
-using Microsoft.Azure.Functions.Worker;
-using Microsoft.Azure.Functions.Worker.Http;
+using System.Net;
+using System.Reflection;
 
 public static class HttpRequestDataExtensions
 {
@@ -65,7 +60,7 @@ public static class HttpRequestDataExtensions
     public static async Task<HttpResponseData> CreatedAtResponse<T>(this HttpRequestData request, string nameOfFunction, object routeValues, T data = default)
     {
         var methods = typeof(Functions).GetMethods();
-        var functions = methods.Where(x => CustomAttributeExtensions.GetCustomAttribute((MemberInfo)x, typeof(FunctionAttribute)) != null).ToList();
+        var functions = methods.Where(x => x.GetCustomAttribute<FunctionAttribute>() != null).ToList();
 
         var root = functions.FirstOrDefault(x => x.Name == nameOfFunction);
 
