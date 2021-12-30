@@ -1,31 +1,22 @@
-var connectionString = Environment.GetEnvironmentVariable("SqlConnectionString");
+using Microsoft.Azure.CosmosRepository;
 
 var host = new HostBuilder()
     .ConfigureFunctionsWorkerDefaults()
     .ConfigureServices(services =>
     {
-        services.AddDbContext<TodoDb>(options =>
-            options.UseSqlServer(connectionString)
-        );
+        // loads out the configuration automatically
+        services.AddCosmosRepository();
+
     })
     .Build();
 
-await CreateDbIfNotExists();
 await host.RunAsync();
-
-async Task CreateDbIfNotExists()
-{
-    var options = new DbContextOptionsBuilder<TodoDb>().UseSqlServer(connectionString).Options;
-    using var db = new TodoDb(options);
-    await db.Database.EnsureCreatedAsync();
-    // todo: migrations
-}
 
 public class Functions
 {
-    private readonly TodoDb _db;
+    private readonly IRepository<Todo> _db;
 
-    public Functions(TodoDb db)
+    public Functions(IRepository<Todo> db)
     {
         _db = db;
     }
@@ -45,13 +36,13 @@ public class Functions
     [Function("todo-list")]
     public async Task<HttpResponseData> Todos([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "todos")] HttpRequestData req, FunctionContext executionContext)
     {
-        return await req.OkObjectResponse(await _db.Todos.ToListAsync());
+        return await req.OkObjectResponse(await _db.GetAsync(todo => true));
     }
 
     [Function("todo-find")]
-    public async Task<HttpResponseData> TodosFindById([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "todos/{id:int}")] HttpRequestData req, int id, FunctionContext executionContext)
+    public async Task<HttpResponseData> TodosFindById([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "todos/{id:guid}")] HttpRequestData req, Guid id, FunctionContext executionContext)
     {
-        if (await _db.Todos.FindAsync(id) is Todo todo)
+        if (await _db.GetAsync(id.ToString()) is Todo todo)
         {
             return await req.OkObjectResponse(todo);
         }
@@ -61,13 +52,13 @@ public class Functions
     [Function("todo-list-complete")]
     public async Task<HttpResponseData> TodosComplete([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "todos/complete")] HttpRequestData req, FunctionContext executionContext)
     {
-        return await req.OkObjectResponse(await _db.Todos.Where(x => x.IsComplete).ToListAsync());
+        return await req.OkObjectResponse(await _db.GetAsync(x => x.IsComplete));
     }
 
     [Function("todo-list-incomplete")]
     public async Task<HttpResponseData> TodosInComplete([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "todos/incomplete")] HttpRequestData req, FunctionContext executionContext)
     {
-        return await req.OkObjectResponse(await _db.Todos.Where(x => !x.IsComplete).ToListAsync());
+        return await req.OkObjectResponse(await _db.GetAsync(x => !x.IsComplete));
     }
 
     [Function("todo-post")]
@@ -80,14 +71,12 @@ public class Functions
             return await req.ValidationResponse(errors);
         }
 
-        _db.Todos.Add(todo);
-        await _db.SaveChangesAsync();
-        
+        await _db.CreateAsync(todo);
         return await req.CreatedAtResponse(nameof(TodosFindById), new { id = todo.Id }, todo);
     }
 
     [Function("todo-put")]
-    public async Task<HttpResponseData> TodosPut([HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "todos/{id:int}")] HttpRequestData req, int id, FunctionContext executionContext)
+    public async Task<HttpResponseData> TodosPut([HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "todos/{id:guid}")] HttpRequestData req, Guid id, FunctionContext executionContext)
     {
         var inputTodo = await req.ReadFromJsonAsync<Todo>();
 
@@ -96,7 +85,7 @@ public class Functions
             return await req.ValidationResponse(errors);
         }
 
-        var todo = await _db.Todos.FindAsync(id);
+        var todo = await _db.GetAsync(id.ToString());
         if (todo == null)
         {
             return req.NotFoundResponse();
@@ -105,18 +94,18 @@ public class Functions
         todo.Title = inputTodo.Title;
         todo.IsComplete = inputTodo.IsComplete;
 
-        await _db.SaveChangesAsync();
+        await _db.UpdateAsync(todo);
 
         return req.NoContentResponse();
     }
 
     [Function("todo-mark-complete")]
-    public async Task<HttpResponseData> TodosMarkComplete([HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "todos/{id:int}/mark-complete")] HttpRequestData req, int id, FunctionContext executionContext)
+    public async Task<HttpResponseData> TodosMarkComplete([HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "todos/{id:guid}/mark-complete")] HttpRequestData req, Guid id, FunctionContext executionContext)
     {
-        if (await _db.Todos.FindAsync(id) is Todo todo)
+        if (await _db.GetAsync(id.ToString()) is Todo todo)
         {
             todo.IsComplete = true;
-            await _db.SaveChangesAsync();
+            await _db.UpdateAsync(todo);
             return req.NoContentResponse();
         }
 
@@ -124,12 +113,12 @@ public class Functions
     }
 
     [Function("todo-mark-incomplete")]
-    public async Task<HttpResponseData> TodosMarkIncomplete([HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "todos/{id:int}/mark-incomplete")] HttpRequestData req, int id, FunctionContext executionContext)
+    public async Task<HttpResponseData> TodosMarkIncomplete([HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "todos/{id:guid}/mark-incomplete")] HttpRequestData req, Guid id, FunctionContext executionContext)
     {
-        if (await _db.Todos.FindAsync(id) is Todo todo)
+        if (await _db.GetAsync(id.ToString()) is Todo todo)
         {
             todo.IsComplete = false;
-            await _db.SaveChangesAsync();
+            await _db.UpdateAsync(todo);
             return req.NoContentResponse();
         }
 
@@ -137,12 +126,11 @@ public class Functions
     }
 
     [Function("todo-delete")]
-    public async Task<HttpResponseData> TodosDelete([HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "todos/{id:int}")] HttpRequestData req, int id, FunctionContext executionContext)
+    public async Task<HttpResponseData> TodosDelete([HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "todos/{id:guid}")] HttpRequestData req, Guid id, FunctionContext executionContext)
     {
-        if (await _db.Todos.FindAsync(id) is Todo todo)
+        if (await _db.GetAsync(id.ToString()) is Todo todo)
         {
-            _db.Todos.Remove(todo);
-            await _db.SaveChangesAsync();
+            await _db.DeleteAsync(todo);
             return req.NoContentResponse();
         }
 
@@ -152,25 +140,19 @@ public class Functions
     [Function("todo-delete-all")]
     public async Task<HttpResponseData> TodosDeleteAll([HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "todos/delete-all")] HttpRequestData req, FunctionContext executionContext)
     {
-        await _db.Database.ExecuteSqlRawAsync("DELETE FROM Todos");
-        return req.NoContentResponse();
+        throw new NotImplementedException("not implemented yet");
+        //return req.NoContentResponse();
     }
 }
 
-public class Todo
+public class Todo : Item
 {
-    public int Id { get; set; }
+    //public int ExternalId { get; set; }
 
     [Required]
     public string Title { get; set; }
 
     public bool IsComplete { get; set; }
-}
 
-public class TodoDb : DbContext
-{
-    public TodoDb(DbContextOptions<TodoDb> options)
-        : base(options) { }
-
-    public DbSet<Todo> Todos => Set<Todo>();
+    //protected override string GetPartitionKeyValue() => ExternalId.ToString();
 }
