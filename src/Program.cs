@@ -1,4 +1,5 @@
 using Microsoft.Azure.CosmosRepository;
+using Microsoft.Azure.CosmosRepository.Paging;
 
 var host = new HostBuilder()
     .ConfigureFunctionsWorkerDefaults()
@@ -34,9 +35,15 @@ public class Functions
     }
 
     [Function("todo-list")]
-    public async Task<HttpResponseData> Todos([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "todos")] HttpRequestData req, FunctionContext executionContext)
+    public async Task<HttpResponseData> Todos([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "todos")] HttpRequestData req,
+        int? page,
+        int? pageSize,
+        FunctionContext executionContext)
     {
-        return await req.OkObjectResponse(await _db.GetAsync(todo => true));
+        // todo: work out how to do ordering
+
+        IPageQueryResult<Todo> data = await _db.PageAsync(pageNumber: page ?? 1, pageSize: pageSize ?? 25);
+        return await req.OkObjectResponse(data.Items);
     }
 
     [Function("todo-find")]
@@ -147,12 +154,8 @@ public class Functions
 
 public class Todo : Item
 {
-    //public int ExternalId { get; set; }
-
     [Required]
     public string Title { get; set; }
 
     public bool IsComplete { get; set; }
-
-    //protected override string GetPartitionKeyValue() => ExternalId.ToString();
 }
