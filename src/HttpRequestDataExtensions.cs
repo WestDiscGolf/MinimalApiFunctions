@@ -1,8 +1,9 @@
-using Microsoft.AspNetCore.Http.Extensions;
+using System.Collections.Generic;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Routing.Template;
 using System.Net;
 using System.Reflection;
+using Microsoft.AspNetCore.Http;
 
 public static class HttpRequestDataExtensions
 {
