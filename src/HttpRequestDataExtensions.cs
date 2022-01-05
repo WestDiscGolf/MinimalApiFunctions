@@ -102,7 +102,8 @@ public static class HttpRequestDataExtensions
 
         if (data != null)
         {
-            await response.WriteAsJsonAsync(data).ConfigureAwait(false);
+            // specify the status here as well otherwise the write json overload will set it to ok
+            await response.WriteAsJsonAsync(data, HttpStatusCode.Created).ConfigureAwait(false);
         }
         
         return response;
