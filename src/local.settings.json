@@ -2,18 +2,12 @@
   "IsEncrypted": false,
   "Values": {
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
-    "SqlConnectionString": "Server=(localdb)\\mssqllocaldb;Database=TodoContext-EE98F720-7175-4A67-B373-B9D1556A78D9;Trusted_Connection=True;MultipleActiveResultSets=true",
     "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
 
     // below are the cosmos repository required items
     "RepositoryOptions:CosmosConnectionString": "AccountEndpoint=https://localhost:8081/;AccountKey=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==",
     //"RepositoryOptions:AccountEndpoint": "https://localhost:8081/",
     "RepositoryOptions:DatabaseId": "MinimalApiFunctions",
-    "RepositoryOptions:ContainerId": "todo",
-    "RepositoryOptions:OptimizeBandwidth": true,
-    "RepositoryOptions:ContainerPerItemType": true,
-    "RepositoryOptions:AllowBulkExecution": true,
-    "RepositoryOptions:SerializationOptions:IgnoreNullValues": true,
-    "RepositoryOptions:SerializationOptions:PropertyNamingPolicy": "CamelCase"
+    "RepositoryOptions:ContainerId": "Todo"
   }
 }

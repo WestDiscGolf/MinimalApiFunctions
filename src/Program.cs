@@ -126,16 +126,38 @@ public class Functions
     [Function("todo-delete-all")]
     public async Task<HttpResponseData> TodosDeleteAll([HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "todos/delete-all")] HttpRequestData req)
     {
-        throw new NotImplementedException("not implemented yet");
-        //return req.NoContentResponse();
+        var todos = await _db.GetAsync(x => x.Id != null);
+        // no bulk delete options so have to do it one at a time
+        foreach (var todo in todos)
+        {
+            await _db.DeleteAsync(todo);
+        }
+
+        return req.NoContentResponse();
+    }
+
+    [Function(nameof(CosmosTrigger))]
+    public void CosmosTrigger([CosmosDBTrigger(
+        databaseName: "%RepositoryOptions:DatabaseId%",
+        containerName: "%RepositoryOptions:ContainerId%",
+        Connection = "RepositoryOptions:CosmosConnectionString",
+        LeaseContainerName = "leases",
+        CreateLeaseContainerIfNotExists = true)] IReadOnlyList<Todo> input, FunctionContext context)
+    {
+        if (input is { Count: > 0 })
+        {
+            foreach (var doc in input)
+            {
+                // do something; do not save back to the same container otherwise it will fire the trigger again!
+                context.GetLogger("Function.CosmosTrigger").LogInformation($"id: {doc.Id}; title: {doc.Title}");
+            }
+        }
     }
 }
 
 public class Todo : Item
 {
-    // note: removal of attribute while waiting for next version of https://github.com/IEvangelist/azure-cosmos-dotnet-repository due to fix
-    // I added for attribute casting - https://github.com/IEvangelist/azure-cosmos-dotnet-repository/issues/157
-    //[Required]
+    [Required]
     public string Title { get; set; }
 
     public bool IsComplete { get; set; }
